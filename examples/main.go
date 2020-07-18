@@ -1,15 +1,33 @@
 package main
 
+import (
+	"log"
+	"time"
+
+	_ "github.com/lib/pq"
+	"github.com/tabvn/orm"
+)
+
 type Post struct {
-	ID    string `json:"id" orm:"pk"`
-	Title string `json:"title" orm:"type:varchar(255)"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type User struct {
-	ID   string `json:"id" orm:"pk"`
-	Name string `json:"name"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	PostID    string `json:"post_id" orm:"index"`
+	Post      *Post  `json:"post" orm:"fk:PostID"`
+	CreatedAt time.Time
 }
 
 func main() {
-
+	// Open Connection
+	db, err := orm.Open("postgres", "host=localhost port=5432 user=postgres dbname=orm password=root sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Register models, auto create table, primary key, index
+	db.Models(&User{}, &Post{})
 }
