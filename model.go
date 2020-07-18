@@ -1,6 +1,7 @@
 package orm
 
 import (
+	"log"
 	"reflect"
 	"regexp"
 	"strings"
@@ -17,14 +18,20 @@ const (
 	ManyToMany              = "ManyToMany"
 )
 
-type Field struct {
-	Name    string
-	Type    reflect.Type
-	Primary bool
-	Index   bool
-	Default string
-	NotNull bool
+type Column struct {
+	Primary  bool
+	Name     string
+	Type     string
+	Default  string
+	Nullable bool
+	Index    bool
 }
+type Field struct {
+	Name   string
+	Type   reflect.Type
+	Column *Column
+}
+
 type Relation struct {
 	Model *Model
 	Type  string
@@ -33,7 +40,7 @@ type Model struct {
 	Name      string
 	Table     string
 	Fields    []*Field
-	Relations []*Relation
+	Relations map[string]*Relation
 }
 
 func SnakeCase(str string) string {
@@ -42,12 +49,50 @@ func SnakeCase(str string) string {
 	return strings.ToLower(snake)
 }
 
-func GetType(obj interface{}) reflect.Type {
+func getType(obj interface{}) reflect.Type {
 	return reflect.ValueOf(obj).Type()
 }
 
+func getColumn(t reflect.StructField) *Column {
+	log.Println("type", t.Name, t.Type.Kind())
+	if t.Type.Kind() == reflect.String {
+		log.Println("col", t.Name, t.Type)
+	}
+	if t.Type.Kind() == reflect.Ptr {
+		log.Println("field nae", t.Name, t.Type)
+	}
+	col := &Column{
+		Name:     SnakeCase(t.Name),
+		Type:     "",
+		Default:  "",
+		Nullable: false,
+		Index:    false,
+	}
+	ormTag, ok := t.Tag.Lookup("orm")
+	if strings.ToLower(t.Name) == "id" {
+		col.Primary = true
+	}
+	if ok {
+		splitTags := strings.Split(ormTag, ";")
+		for _, tag := range splitTags {
+			splitLevel2 := strings.Split(strings.TrimSpace(tag), ":")
+			for _, tag1 := range splitLevel2 {
+				lowerTag := strings.ToLower(tag1)
+				if lowerTag == "pk" {
+					col.Primary = true
+				}
+				if lowerTag == "index" {
+					col.Index = true
+				}
+			}
+		}
+	}
+
+	return col
+}
+
 func NewModel(obj interface{}) (*Model, error) {
-	t := GetType(obj)
+	t := getType(obj)
 	kind := t.Kind()
 	if kind == reflect.Ptr {
 		t = t.Elem()
@@ -60,31 +105,10 @@ func NewModel(obj interface{}) (*Model, error) {
 	}
 	for i := 0; i < t.NumField(); i++ {
 		field := &Field{
-			Name:    t.Field(i).Name,
-			Type:    t.Field(i).Type,
-			Index:   false,
-			Default: "",
-			NotNull: false,
+			Name: t.Field(i).Name,
+			Type: t.Field(i).Type,
 		}
-		ormTag, ok := t.Field(i).Tag.Lookup("orm")
-		if strings.ToLower(field.Name) == "id" {
-			field.Primary = true
-		}
-		if ok {
-			splitTags := strings.Split(ormTag, ";")
-			for _, tag := range splitTags {
-				splitLevel2 := strings.Split(strings.TrimSpace(tag), ":")
-				for _, tag1 := range splitLevel2 {
-					lowerTag := strings.ToLower(tag1)
-					if lowerTag == "pk" {
-						field.Primary = true
-					}
-					if lowerTag == "index" {
-						field.Index = true
-					}
-				}
-			}
-		}
+		field.Column = getColumn(t.Field(i))
 		model.Fields = append(model.Fields, field)
 	}
 	return model, nil
